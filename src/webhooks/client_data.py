@@ -16,6 +16,9 @@ async def get_or_fetch_agent_profile(agent_id: str) -> Dict[str, Any]:
     """
     Get agent profile from OpenMemory cache or fetch from API.
     
+    Note: This function does NOT store the agent profile. Storage happens
+    in the post-call webhook after the conversation completes.
+    
     Args:
         agent_id: The agent ID
         
@@ -35,7 +38,7 @@ async def get_or_fetch_agent_profile(agent_id: str) -> Dict[str, Any]:
             return elevenlabs.extract_agent_fields(cached_agent_data)
         
         # Fetch from API if not in cache
-        logger.info(f"Fetching agent profile from API for {agent_id}")
+        logger.info(f"Fetching agent profile from API for {agent_id} (not storing - will be stored in post-call webhook)")
         agent_data = await elevenlabs.get_agent(agent_id)
         
         if not agent_data:
@@ -44,10 +47,8 @@ async def get_or_fetch_agent_profile(agent_id: str) -> Dict[str, Any]:
                 detail=f"Agent {agent_id} not found"
             )
         
-        # Store in OpenMemory cache
-        await openmemory.store_agent_profile(agent_id, agent_data)
-        
         # Extract fields for backward compatibility
+        # Note: We don't store here - storage happens in post-call webhook
         return elevenlabs.extract_agent_fields(agent_data)
         
     finally:
@@ -92,16 +93,16 @@ async def client_data_webhook(request: Request):
             detail="Missing agent_id"
         )
     
-    # Get or fetch agent profile
-    agent_profile = await get_or_fetch_agent_profile(agent_id)
-    
     # Use caller_id as user_id for OpenMemory
     # caller_id from Twilio webhook is the phone number, which is consistent for same caller
     user_id = caller_id or "unknown"
     
     # Query OpenMemory for user summary and generate personalized message
     openmemory = OpenMemoryClient()
+    agent_profile = None
     try:
+        # Get or fetch agent profile
+        agent_profile = await get_or_fetch_agent_profile(agent_id)
         # Get user summary
         user_summary = await openmemory.get_user_summary(user_id)
         
@@ -134,8 +135,10 @@ async def client_data_webhook(request: Request):
         return response
         
     except Exception as e:
-        logger.error(f"Error generating personalized message: {e}")
+        logger.error(f"Error generating personalized message or fetching agent profile: {e}")
         # Fallback to default agent configuration
+        # If agent_profile is None, use empty dict to avoid AttributeError
+        agent_profile = agent_profile or {}
         response = build_conversation_initiation_response(
             dynamic_variables={
                 "caller_id": caller_id or "",

@@ -34,7 +34,8 @@ async def get_all_memories(client: httpx.AsyncClient, user_id: str) -> List[Dict
             }
             response = await client.post("/memory/query", json=payload)
             if response.status_code == 200:
-                memories = response.json()
+                result = response.json()
+                memories = result.get("memories", [])
                 if isinstance(memories, list):
                     for mem in memories:
                         mem_id = mem.get("id") or mem.get("memory_id")

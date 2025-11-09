@@ -36,9 +36,13 @@ wheels/
 data/*.json
 !data/.gitkeep
 
+# Webhook storage
+data/webhooks/
+
 # IDE
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~

@@ -1,29 +1,44 @@
 """Authentication utilities for webhooks."""
 import time
 import hmac
+import hashlib
 from hashlib import sha256
+from typing import Tuple, Optional
 from fastapi import Request, HTTPException, status
 from config import settings
 import logging
+import uuid
 
 logger = logging.getLogger(__name__)
 
 
-async def validate_hmac_signature(request: Request, body_bytes: bytes) -> bool:
+async def validate_hmac_signature(request: Request, body_bytes: bytes, request_id: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """
-    Validate HMAC signature for post-call-webhook.
+    Validate HMAC signature for post-call-webhook with enhanced logging and audit trail.
     
     Args:
         request: FastAPI request object
         body_bytes: Request body bytes (must be passed separately to avoid reading twice)
+        request_id: Request ID for tracking (generated if not provided)
         
     Returns:
-        True if signature is valid, False otherwise
+        Tuple of (is_valid, request_id)
     """
+    if not request_id:
+        request_id = str(uuid.uuid4())
+    
     signature_header = request.headers.get("elevenlabs-signature")
     if not signature_header:
-        logger.warning("Missing ElevenLabs-Signature header")
-        return False
+        logger.warning(
+            f"HMAC validation failed: Missing ElevenLabs-Signature header",
+            extra={
+                "request_id": request_id,
+                "client_ip": request.client.host if request.client else None,
+                "user_agent": request.headers.get("user-agent"),
+                "payload_hash": hashlib.sha256(body_bytes).hexdigest()[:16]
+            }
+        )
+        return False, request_id
     
     try:
         # Parse signature header: t=timestamp,v0=hash
@@ -32,18 +47,37 @@ async def validate_hmac_signature(request: Request, body_bytes: bytes) -> bool:
         hmac_part = parts[1] if len(parts) > 1 else None
         
         if not hmac_part:
-            logger.warning("Invalid signature format")
-            return False
+            logger.warning(
+                f"HMAC validation failed: Invalid signature format",
+                extra={
+                    "request_id": request_id,
+                    "signature_header": signature_header[:50] if len(signature_header) > 50 else signature_header,
+                    "client_ip": request.client.host if request.client else None
+                }
+            )
+            return False, request_id
         
         # Extract timestamp
         timestamp = timestamp_part.split("=")[1]
         
         # Validate timestamp (30 minute tolerance)
         current_time = int(time.time())
+        timestamp_int = int(timestamp)
         tolerance = 30 * 60  # 30 minutes in seconds
-        if int(timestamp) < (current_time - tolerance):
-            logger.warning("Timestamp too old")
-            return False
+        age = current_time - timestamp_int
+        
+        if age > tolerance:
+            logger.warning(
+                f"HMAC validation failed: Timestamp too old (age: {age}s, tolerance: {tolerance}s)",
+                extra={
+                    "request_id": request_id,
+                    "timestamp": timestamp_int,
+                    "current_time": current_time,
+                    "age_seconds": age,
+                    "client_ip": request.client.host if request.client else None
+                }
+            )
+            return False, request_id
         
         # Get request body string
         body_str = body_bytes.decode('utf-8')
@@ -57,15 +91,42 @@ async def validate_hmac_signature(request: Request, body_bytes: bytes) -> bool:
         )
         expected_digest = 'v0=' + mac.hexdigest()
         
-        # Compare signatures
-        if hmac_part != expected_digest:
-            logger.warning("HMAC signature mismatch")
-            return False
+        # Compare signatures using constant-time comparison
+        if not hmac.compare_digest(hmac_part, expected_digest):
+            logger.warning(
+                f"HMAC validation failed: Signature mismatch",
+                extra={
+                    "request_id": request_id,
+                    "timestamp": timestamp_int,
+                    "age_seconds": age,
+                    "client_ip": request.client.host if request.client else None,
+                    "payload_hash": hashlib.sha256(body_bytes).hexdigest()[:16],
+                    "user_agent": request.headers.get("user-agent")
+                }
+            )
+            return False, request_id
         
-        return True
+        logger.info(
+            f"HMAC validation successful",
+            extra={
+                "request_id": request_id,
+                "timestamp": timestamp_int,
+                "age_seconds": age,
+                "client_ip": request.client.host if request.client else None
+            }
+        )
+        return True, request_id
     except Exception as e:
-        logger.error(f"Error validating HMAC signature: {e}")
-        return False
+        logger.error(
+            f"Error validating HMAC signature: {e}",
+            extra={
+                "request_id": request_id,
+                "client_ip": request.client.host if request.client else None,
+                "error_type": type(e).__name__
+            },
+            exc_info=True
+        )
+        return False, request_id
 
 
 def validate_header_auth(request: Request) -> bool:

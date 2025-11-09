@@ -7,7 +7,6 @@ import time
 from typing import List, Dict, Any
 
 async def store_conversation(
-    client: httpx.AsyncClient,
     conversation_id: str,
     elevenlabs_key: str,
     user_id: str,
@@ -86,21 +85,18 @@ async def store_conversation(
         }
         
         # Store to OpenMemory
-        om_client = httpx.AsyncClient(
+        async with httpx.AsyncClient(
             base_url=openmemory_url,
             headers={
                 "X-API-Key": openmemory_api_key,
                 "Content-Type": "application/json"
             },
             timeout=30.0
-        )
-        
-        response = await om_client.post("/memory/add", json=store_payload)
-        response.raise_for_status()
-        result = response.json()
-        memory_id = result.get("id")
-        
-        await om_client.aclose()
+        ) as om_client:
+            response = await om_client.post("/memory/add", json=store_payload)
+            response.raise_for_status()
+            result = response.json()
+            memory_id = result.get("id")
         
         print(f"   ✓ Stored to OpenMemory")
         print(f"   Memory ID: {memory_id}")
@@ -165,8 +161,6 @@ async def store_all_conversations(
     print(f"Conversations to store: {len(conversation_ids)}")
     print()
     
-    client = httpx.AsyncClient(timeout=30.0)
-    
     results = []
     successful = 0
     failed = 0
@@ -178,7 +172,6 @@ async def store_all_conversations(
         default_user_id = user_id or f"user_{conv_id[:15]}"
         
         result = await store_conversation(
-            client,
             conv_id,
             elevenlabs_key,
             default_user_id,
@@ -195,8 +188,6 @@ async def store_all_conversations(
         
         # Small delay between requests
         await asyncio.sleep(1)
-    
-    await client.aclose()
     
     # Summary
     print("\n" + "=" * 80)

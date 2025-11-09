@@ -25,7 +25,7 @@ def generate_first_message(profile_file: str = "data/comprehensive_profile_15074
     
     # Key locations from profile
     key_locations = ["Winona", "Minnesota", "Peru", "Iran", "Denver", "Mississippi River"]
-    found_locations = [loc for loc in key_locations if any(loc.lower() in str(loc).lower() for loc in locations_mentioned)]
+    found_locations = [loc for loc in key_locations if any(loc.lower() in str(elem).lower() for elem in locations_mentioned)]
     
     # Build personalized message
     message_parts = []
