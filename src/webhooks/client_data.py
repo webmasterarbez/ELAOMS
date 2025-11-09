@@ -2,71 +2,61 @@
 from fastapi import APIRouter, Request, HTTPException, status
 from typing import Dict, Any
 import logging
-from utils.auth import validate_header_auth
-from utils.helpers import build_conversation_initiation_response
-from openmemory_client import OpenMemoryClient
-from elevenlabs_client import ElevenLabsClient
-from database import get_db, Agent
-from sqlalchemy.orm import Session
-from fastapi import Depends
+from src.utils.auth import validate_header_auth
+from src.utils.helpers import build_conversation_initiation_response
+from src.clients.openmemory import OpenMemoryClient
+from src.clients.elevenlabs import ElevenLabsClient
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
-async def get_or_fetch_agent_profile(agent_id: str, db: Session) -> Dict[str, Any]:
+async def get_or_fetch_agent_profile(agent_id: str) -> Dict[str, Any]:
     """
-    Get agent profile from cache or fetch from API.
+    Get agent profile from OpenMemory cache or fetch from API.
     
     Args:
         agent_id: The agent ID
-        db: Database session
         
     Returns:
-        Agent profile dictionary
+        Agent profile dictionary with extracted fields for backward compatibility
     """
-    # Check database cache
-    agent = db.query(Agent).filter(Agent.agent_id == agent_id).first()
-    
-    if agent:
-        logger.info(f"Using cached agent profile for {agent_id}")
-        return {
-            "agent_id": agent.agent_id,
-            "title": agent.title,
-            "first_message": agent.first_message,
-            "system_prompt": agent.system_prompt,
-            "language": agent.language,
-            "voice_id": agent.voice_id
-        }
-    
-    # Fetch from API
-    logger.info(f"Fetching agent profile from API for {agent_id}")
+    openmemory = OpenMemoryClient()
     elevenlabs = ElevenLabsClient()
+    
     try:
-        profile = await elevenlabs.build_agent_profile(agent_id)
-        if not profile:
+        # Check OpenMemory cache first
+        cached_agent_data = await openmemory.get_agent_profile(agent_id)
+        
+        if cached_agent_data:
+            logger.info(f"Using cached agent profile for {agent_id}")
+            # Extract fields for backward compatibility
+            return elevenlabs.extract_agent_fields(cached_agent_data)
+        
+        # Fetch from API if not in cache
+        logger.info(f"Fetching agent profile from API for {agent_id}")
+        agent_data = await elevenlabs.get_agent(agent_id)
+        
+        if not agent_data:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Agent {agent_id} not found"
             )
         
-        # Store in database cache
-        agent = Agent(**profile)
-        db.add(agent)
-        db.commit()
-        db.refresh(agent)
+        # Store in OpenMemory cache
+        await openmemory.store_agent_profile(agent_id, agent_data)
         
-        return profile
+        # Extract fields for backward compatibility
+        return elevenlabs.extract_agent_fields(agent_data)
+        
     finally:
         await elevenlabs.close()
+        await openmemory.close()
 
 
 @router.post("/client-data")
-async def client_data_webhook(
-    request: Request,
-    db: Session = Depends(get_db)
-):
+async def client_data_webhook(request: Request):
     """
     Handle client-data webhook for conversation initiation.
     
@@ -103,9 +93,10 @@ async def client_data_webhook(
         )
     
     # Get or fetch agent profile
-    agent_profile = await get_or_fetch_agent_profile(agent_id, db)
+    agent_profile = await get_or_fetch_agent_profile(agent_id)
     
     # Use caller_id as user_id for OpenMemory
+    # caller_id from Twilio webhook is the phone number, which is consistent for same caller
     user_id = caller_id or "unknown"
     
     # Query OpenMemory for user summary and generate personalized message

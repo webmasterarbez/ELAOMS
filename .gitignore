@@ -32,6 +32,10 @@ wheels/
 *.sqlite
 *.sqlite3
 
+# Data/output files
+data/*.json
+!data/.gitkeep
+
 # IDE
 .vscode/
 .idea/

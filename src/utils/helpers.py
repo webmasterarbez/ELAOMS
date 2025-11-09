@@ -9,31 +9,53 @@ def extract_user_id_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     """
     Extract user_id from post-call webhook payload.
     
+    Priority order:
+    1. system__caller_id from dynamic_variables (most consistent for same caller)
+    2. user_id from conversation_initiation_client_data
+    3. user_id from metadata
+    4. user_id from dynamic_variables
+    5. caller_id from metadata
+    
     Args:
         payload: Post-call webhook payload
         
     Returns:
         User ID or None if not found
     """
-    # Try multiple possible locations for user_id
     data = payload.get("data", {})
     
-    # Check metadata.user_id
-    user_id = data.get("metadata", {}).get("user_id")
-    if user_id:
-        return user_id
+    # Priority 1: system__caller_id from dynamic_variables (most consistent for same caller)
+    dynamic_vars = data.get("conversation_initiation_client_data", {}).get("dynamic_variables", {})
+    caller_id = dynamic_vars.get("system__caller_id")
+    if caller_id:
+        logger.info(f"Using system__caller_id as user_id: {caller_id}")
+        return str(caller_id)
     
-    # Check conversation_initiation_client_data.user_id
+    # Priority 2: user_id from conversation_initiation_client_data
     user_id = data.get("conversation_initiation_client_data", {}).get("user_id")
     if user_id:
-        return user_id
+        logger.info(f"Using conversation_initiation_client_data.user_id: {user_id}")
+        return str(user_id)
     
-    # Check dynamic_variables for user_id
-    dynamic_vars = data.get("conversation_initiation_client_data", {}).get("dynamic_variables", {})
+    # Priority 3: user_id from metadata
+    user_id = data.get("metadata", {}).get("user_id")
+    if user_id:
+        logger.info(f"Using metadata.user_id: {user_id}")
+        return str(user_id)
+    
+    # Priority 4: user_id from dynamic_variables
     user_id = dynamic_vars.get("user_id")
     if user_id:
-        return user_id
+        logger.info(f"Using dynamic_variables.user_id: {user_id}")
+        return str(user_id)
     
+    # Priority 5: caller_id from metadata (phone number)
+    caller_id = data.get("metadata", {}).get("caller_id") or data.get("metadata", {}).get("from")
+    if caller_id:
+        logger.info(f"Using metadata.caller_id: {caller_id}")
+        return str(caller_id)
+    
+    logger.warning("No user_id found in payload")
     return None
 
 

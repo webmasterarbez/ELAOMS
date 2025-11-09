@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Request, HTTPException, status
 from typing import Dict, Any, Optional
 import logging
-from utils.auth import validate_header_auth
-from openmemory_client import OpenMemoryClient
+from src.utils.auth import validate_header_auth
+from src.clients.openmemory import OpenMemoryClient
 
 logger = logging.getLogger(__name__)
 

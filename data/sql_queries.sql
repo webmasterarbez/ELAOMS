@@ -1,0 +1,64 @@
+-- ============================================================================
+-- OpenMemory Agent Profile Queries
+-- ============================================================================
+-- 
+-- NOTE: Agent profiles are now stored in OpenMemory, not SQLite.
+-- This file contains examples of how to query agent profiles from OpenMemory.
+-- 
+-- Agent profiles are stored with:
+--   - user_id = agent_id (e.g., "agent_123")
+--   - metadata filters: {"type": "agent_profile", "agent_id": "agent_id"}
+--   - content: Complete agent payload from Eleven Labs API as JSON string
+-- 
+-- ============================================================================
+
+-- ============================================================================
+-- USING THE OPENMEMORY API
+-- ============================================================================
+
+-- Get agent profile using curl:
+-- curl -X POST http://localhost:8080/memory/query \
+--   -H "X-API-Key: your_api_key" \
+--   -H "Content-Type: application/json" \
+--   -d '{
+--     "query": "agent profile",
+--     "user_id": "agent_id_here",
+--     "limit": 1,
+--     "filters": {
+--       "type": "agent_profile",
+--       "agent_id": "agent_id_here"
+--     }
+--   }'
+
+-- ============================================================================
+-- USING THE PYTHON CLIENT
+-- ============================================================================
+
+-- Example Python code to query agent profiles:
+--
+-- from src.clients.openmemory import OpenMemoryClient
+-- 
+-- openmemory = OpenMemoryClient()
+-- 
+-- # Get agent profile
+-- agent_profile = await openmemory.get_agent_profile("agent_id_here")
+-- 
+-- # Store agent profile
+-- await openmemory.store_agent_profile("agent_id_here", agent_data)
+-- 
+-- await openmemory.close()
+
+-- ============================================================================
+-- MIGRATION NOTES
+-- ============================================================================
+--
+-- Previous SQLite queries are no longer applicable as agent profiles
+-- are now stored in OpenMemory using the agent_id as the user_id.
+--
+-- Benefits of OpenMemory storage:
+--   - Unified storage with conversation memories
+--   - Automatic text extraction and categorization
+--   - Semantic search capabilities
+--   - No separate database to maintain
+--
+-- ============================================================================

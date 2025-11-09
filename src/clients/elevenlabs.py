@@ -30,10 +30,10 @@ class ElevenLabsClient:
             agent_id: The agent ID to fetch
             
         Returns:
-            Agent configuration dictionary or None if not found
+            Complete agent configuration dictionary from API or None if not found
         """
         try:
-            response = await self.client.get(f"/agents/{agent_id}")
+            response = await self.client.get(f"/convai/agents/{agent_id}")
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as e:
@@ -46,31 +46,29 @@ class ElevenLabsClient:
             logger.error(f"Error fetching agent {agent_id}: {e}")
             raise
     
-    async def build_agent_profile(self, agent_id: str) -> Optional[Dict[str, Any]]:
+    def extract_agent_fields(self, agent_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Build agent profile from API response.
+        Extract commonly used fields from agent data for backward compatibility.
         
         Args:
-            agent_id: The agent ID to build profile for
+            agent_data: Complete agent data from API
             
         Returns:
-            Agent profile dictionary with title, first_message, system_prompt, etc.
+            Dictionary with extracted fields: agent_id, title, first_message, system_prompt, language, voice_id
         """
-        agent_data = await self.get_agent(agent_id)
-        if not agent_data:
-            return None
+        # Navigate the nested structure from the API response
+        agent_config = agent_data.get("conversation_config", {})
+        agent_info = agent_config.get("agent", {})
+        tts_config = agent_config.get("tts", {})
         
-        # Extract relevant fields from agent data
-        profile = {
-            "agent_id": agent_id,
-            "title": agent_data.get("name") or agent_data.get("title"),
-            "first_message": agent_data.get("first_message"),
-            "system_prompt": agent_data.get("prompt", {}).get("prompt") if isinstance(agent_data.get("prompt"), dict) else agent_data.get("prompt"),
-            "language": agent_data.get("language"),
-            "voice_id": agent_data.get("voice_id")
+        return {
+            "agent_id": agent_data.get("agent_id"),
+            "title": agent_data.get("name"),
+            "first_message": agent_info.get("first_message"),
+            "system_prompt": agent_info.get("prompt", {}).get("prompt") if isinstance(agent_info.get("prompt"), dict) else agent_info.get("prompt"),
+            "language": agent_info.get("language"),
+            "voice_id": tts_config.get("voice_id")
         }
-        
-        return profile
     
     async def close(self):
         """Close the HTTP client."""

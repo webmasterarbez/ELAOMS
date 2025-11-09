@@ -41,14 +41,12 @@ class OpenMemoryClient:
         """
         payload = {
             "content": content,
-            "filters": {
-                "user_id": user_id,
-                **(metadata or {})
-            }
+            "user_id": user_id,
+            "filters": metadata or {}
         }
         
         try:
-            response = await self.client.post("/memories", json=payload)
+            response = await self.client.post("/memory/add", json=payload)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
@@ -77,14 +75,12 @@ class OpenMemoryClient:
         payload = {
             "query": query,
             "limit": limit,
-            "filters": {
-                "user_id": user_id,
-                **(filters or {})
-            }
+            "user_id": user_id,
+            "filters": filters or {}
         }
         
         try:
-            response = await self.client.post("/memories/query", json=payload)
+            response = await self.client.post("/memory/query", json=payload)
             response.raise_for_status()
             result = response.json()
             return result.get("memories", [])
@@ -125,23 +121,32 @@ class OpenMemoryClient:
         """
         Store entire post-call webhook payload to OpenMemory.
         
+        Uses minimal processing approach:
+        - Extracts user_id (system__caller_id) for consistent caller identification
+        - Sends entire payload as-is to OpenMemory
+        - OpenMemory handles text extraction and categorization automatically
+        
         Args:
             payload: Complete post_call_transcription webhook payload
-            user_id: User ID for memory isolation
+            user_id: User ID for memory isolation (extracted from system__caller_id)
             
         Returns:
             Response from OpenMemory API
         """
         # Convert entire payload to JSON string for storage
+        # OpenMemory will extract text and categorize automatically
         import json
         content = json.dumps(payload, indent=2)
         
+        # Store minimal metadata for filtering
         metadata = {
             "conversation_id": payload.get("data", {}).get("conversation_id"),
             "agent_id": payload.get("data", {}).get("agent_id"),
             "event_type": payload.get("type"),
             "event_timestamp": payload.get("event_timestamp")
         }
+        
+        logger.info(f"Storing post-call payload for user {user_id}, conversation {metadata.get('conversation_id')}")
         
         return await self.store_memory(
             content=content,
@@ -190,6 +195,80 @@ class OpenMemoryClient:
             return None
         except Exception as e:
             logger.error(f"Error generating personalized message: {e}")
+            return None
+    
+    async def store_agent_profile(
+        self,
+        agent_id: str,
+        agent_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Store agent profile in OpenMemory.
+        
+        Uses agent_id as user_id to isolate agent profiles from conversation memories.
+        Stores the complete agent payload as JSON content.
+        
+        Args:
+            agent_id: The agent ID (used as user_id in OpenMemory)
+            agent_data: Complete agent data from Eleven Labs API
+            
+        Returns:
+            Response from OpenMemory API with memory ID
+        """
+        import json
+        content = json.dumps(agent_data, indent=2)
+        
+        metadata = {
+            "type": "agent_profile",
+            "agent_id": agent_id
+        }
+        
+        logger.info(f"Storing agent profile for {agent_id}")
+        
+        return await self.store_memory(
+            content=content,
+            user_id=agent_id,
+            metadata=metadata
+        )
+    
+    async def get_agent_profile(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get agent profile from OpenMemory cache.
+        
+        Args:
+            agent_id: The agent ID to retrieve
+            
+        Returns:
+            Agent profile dictionary or None if not found
+        """
+        try:
+            # Query OpenMemory with agent_id as user_id and type filter
+            memories = await self.query_memories(
+                query="agent profile",
+                user_id=agent_id,
+                limit=1,
+                filters={"type": "agent_profile", "agent_id": agent_id}
+            )
+            
+            if not memories:
+                logger.info(f"No cached agent profile found for {agent_id}")
+                return None
+            
+            # Parse the JSON content back to dictionary
+            import json
+            memory = memories[0]
+            content = memory.get("content", "")
+            
+            try:
+                agent_data = json.loads(content)
+                logger.info(f"Retrieved cached agent profile for {agent_id}")
+                return agent_data
+            except json.JSONDecodeError as e:
+                logger.error(f"Error parsing agent profile JSON for {agent_id}: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Error getting agent profile for {agent_id}: {e}")
             return None
     
     async def close(self):

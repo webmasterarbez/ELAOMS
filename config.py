@@ -14,9 +14,6 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str
     elevenlabs_webhook_secret: str
     
-    # Database Configuration
-    database_url: str = "sqlite:///./elaoms.db"
-    
     # ngrok Configuration (optional)
     ngrok_auth_token: Optional[str] = None
     

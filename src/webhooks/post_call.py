@@ -3,9 +3,9 @@ from fastapi import APIRouter, Request, HTTPException, status
 from typing import Dict, Any
 import json
 import logging
-from utils.auth import validate_hmac_signature
-from utils.helpers import extract_user_id_from_payload
-from openmemory_client import OpenMemoryClient
+from src.utils.auth import validate_hmac_signature
+from src.utils.helpers import extract_user_id_from_payload
+from src.clients.openmemory import OpenMemoryClient
 
 logger = logging.getLogger(__name__)
 
@@ -47,12 +47,13 @@ async def post_call_webhook(request: Request):
             detail="Invalid JSON payload"
         )
     
-    # Extract user_id from payload
+    # Extract user_id from payload (prioritizes system__caller_id for consistent caller identification)
     user_id = extract_user_id_from_payload(payload)
     if not user_id:
         logger.warning("No user_id found in post-call webhook payload")
-        # Use conversation_id as fallback
+        # Use conversation_id as last resort fallback
         user_id = payload.get("data", {}).get("conversation_id", "unknown")
+        logger.warning(f"Using conversation_id as fallback user_id: {user_id}")
     
     # Store entire payload to OpenMemory
     openmemory = OpenMemoryClient()
