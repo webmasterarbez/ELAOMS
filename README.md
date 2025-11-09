@@ -100,7 +100,7 @@ OPENMEMORY_API_KEY=your_openmemory_api_key_here
 
 # Eleven Labs Configuration
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
-ELEVENLABS_WEBHOOK_SECRET=your_webhook_secret_here
+ELEVENLABS_POST_CALL_HMAC_KEY=your_post_call_hmac_key_here
 
 # ngrok Configuration (optional, for local development)
 NGROK_AUTH_TOKEN=your_ngrok_auth_token_here
@@ -176,7 +176,7 @@ Deploy the FastAPI service to your preferred hosting platform:
 1. Go to Agents Platform settings
 2. Enable post-call webhooks
 3. Set webhook URL to: `https://your-domain.com/webhooks/post-call`
-4. Configure HMAC secret (store in `ELEVENLABS_WEBHOOK_SECRET`)
+4. Configure HMAC key (store in `ELEVENLABS_POST_CALL_HMAC_KEY`)
 
 ### 2. Client Data Webhook (Twilio Personalization)
 
@@ -481,7 +481,7 @@ These scripts are useful for testing, debugging, and manual operations. All scri
 
 ### Webhook Authentication Failures
 
-- **Post-call webhook**: Verify `ELEVENLABS_WEBHOOK_SECRET` matches the secret configured in Eleven Labs
+- **Post-call webhook**: Verify `ELEVENLABS_POST_CALL_HMAC_KEY` matches the secret configured in Eleven Labs
 - **Client-data/Search-data webhooks**: Ensure headers are properly configured in Eleven Labs secrets manager
 
 ### OpenMemory Connection Issues
@@ -525,7 +525,7 @@ All configuration is done through environment variables (loaded from `.env` file
 | `OPENMEMORY_URL` | Yes | OpenMemory server URL | `http://localhost:8080` |
 | `OPENMEMORY_API_KEY` | Yes | OpenMemory API key for authentication | - |
 | `ELEVENLABS_API_KEY` | Yes | Eleven Labs API key | - |
-| `ELEVENLABS_WEBHOOK_SECRET` | Yes | Webhook secret for HMAC validation | - |
+| `ELEVENLABS_POST_CALL_HMAC_KEY` | Yes | HMAC key for post-call webhook signature validation | - |
 | `NGROK_AUTH_TOKEN` | No | ngrok authentication token (optional) | - |
 
 ## License

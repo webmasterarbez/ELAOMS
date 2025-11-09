@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     
     # Eleven Labs Configuration
     elevenlabs_api_key: str
-    elevenlabs_webhook_secret: str
+    elevenlabs_post_call_hmac_key: str  # HMAC key for post-call webhook signature validation
+    elevenlabs_client_data_workspace_secret: Optional[str] = None  # Secret for client-data and search-data webhooks (X-Api-Key header)
     
     # ngrok Configuration (optional)
     ngrok_auth_token: Optional[str] = None

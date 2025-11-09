@@ -46,11 +46,21 @@ class OpenMemoryClient:
         }
         
         try:
+            logger.debug(f"Storing memory to OpenMemory: user_id={user_id}, content_length={len(content)}, metadata={metadata}")
             response = await self.client.post("/memory/add", json=payload)
             response.raise_for_status()
-            return response.json()
+            result = response.json()
+            logger.info(f"Successfully stored memory to OpenMemory: user_id={user_id}, memory_id={result.get('id')}")
+            return result
+        except httpx.HTTPStatusError as e:
+            error_detail = f"HTTP {e.response.status_code}: {e.response.text[:500] if e.response else 'No response'}"
+            logger.error(f"HTTP error storing memory to OpenMemory: {error_detail}", exc_info=True)
+            raise
         except httpx.HTTPError as e:
-            logger.error(f"Error storing memory: {e}")
+            logger.error(f"HTTP error storing memory to OpenMemory: {e}", exc_info=True)
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error storing memory to OpenMemory: {type(e).__name__}: {e}", exc_info=True)
             raise
     
     async def query_memories(

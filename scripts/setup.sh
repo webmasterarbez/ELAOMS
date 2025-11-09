@@ -13,7 +13,8 @@ OPENMEMORY_API_KEY=your_openmemory_api_key_here
 
 # Eleven Labs Configuration
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
-ELEVENLABS_WEBHOOK_SECRET=your_webhook_secret_here
+ELEVENLABS_POST_CALL_HMAC_KEY=your_post_call_hmac_key_here
+ELEVENLABS_CLIENT_DATA_WORKSPACE_SECRET=your_client_data_workspace_secret_here
 
 # Webhook Storage Configuration
 WEBHOOK_STORAGE_PATH=data/webhooks

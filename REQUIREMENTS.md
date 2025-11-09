@@ -522,7 +522,7 @@ ELAOMS is built as a FastAPI application that acts as a middleware service betwe
 - `OPENMEMORY_URL`: OpenMemory server URL
 - `OPENMEMORY_API_KEY`: OpenMemory API key
 - `ELEVENLABS_API_KEY`: Eleven Labs API key
-- `ELEVENLABS_WEBHOOK_SECRET`: Webhook secret for HMAC validation
+- `ELEVENLABS_POST_CALL_HMAC_KEY`: HMAC key for post-call webhook signature validation
 
 **CONF-1.3:** The system MUST support the following optional environment variables:
 - `NGROK_AUTH_TOKEN`: ngrok authentication token (for local development)
@@ -1004,7 +1004,7 @@ ELAOMS is built as a FastAPI application that acts as a middleware service betwe
 | `OPENMEMORY_URL` | Yes | `http://localhost:8080` | OpenMemory server URL |
 | `OPENMEMORY_API_KEY` | Yes | - | OpenMemory API key |
 | `ELEVENLABS_API_KEY` | Yes | - | Eleven Labs API key |
-| `ELEVENLABS_WEBHOOK_SECRET` | Yes | - | Webhook secret for HMAC |
+| `ELEVENLABS_POST_CALL_HMAC_KEY` | Yes | - | HMAC key for post-call webhook signature validation |
 | `NGROK_AUTH_TOKEN` | No | - | ngrok auth token (local dev) |
 | `REDIS_URL` | No | - | Redis URL (optional caching) |
 | `ENCRYPTION_KEY` | No | - | Encryption key (if encryption enabled) |

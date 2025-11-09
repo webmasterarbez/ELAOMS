@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import hmac
+import httpx
 from hashlib import sha256
 from src.utils.helpers import extract_user_id_from_payload
 from src.utils.webhook_storage import save_webhook_payload
@@ -79,6 +80,7 @@ async def post_call_webhook(request: Request, background_tasks: BackgroundTasks)
     # 2. Check HMAC header presence (FIRST CHECK - before everything else)
     headers = request.headers.get("elevenlabs-signature")
     if headers is None:
+        logger.warning("Missing elevenlabs-signature header")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing signature header"
@@ -87,21 +89,36 @@ async def post_call_webhook(request: Request, background_tasks: BackgroundTasks)
     # 3. Parse timestamp and signature from header
     try:
         timestamp = headers.split(",")[0][2:]  # Extract timestamp (skip "t=")
-        hmac_signature = headers.split(",")[1]  # Extract signature
+        hmac_signature = headers.split(",")[1]  # Extract signature (includes "v0=")
+        logger.debug(f"Parsed timestamp: {timestamp}, signature prefix: {hmac_signature[:10]}...")
     except (IndexError, ValueError) as e:
-        logger.error(f"Invalid signature format: {e}")
+        logger.error(f"Invalid signature format: {e}, header: {headers[:50] if headers else None}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid signature format"
         )
     
     # 4. Validate timestamp (30 minute tolerance)
-    tolerance = int(time.time()) - 30 * 60
+    # Following ElevenLabs documentation: https://elevenlabs.io/docs/agents-platform/workflows/post-call-webhooks#authentication
     try:
-        if int(timestamp) < tolerance:
+        timestamp_int = int(timestamp)
+        current_time = int(time.time())
+        tolerance = current_time - 30 * 60  # Minimum acceptable timestamp (30 minutes ago)
+        
+        # Check if timestamp is too old (per ElevenLabs docs)
+        if timestamp_int < tolerance:
+            logger.warning(f"HMAC validation failed: Timestamp too old (timestamp: {timestamp_int}, tolerance: {tolerance})")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Timestamp too old"
+            )
+        
+        # Additional security: reject future timestamps (prevents replay attacks)
+        if timestamp_int > current_time:
+            logger.warning(f"HMAC validation failed: Timestamp in the future (timestamp: {timestamp_int}, current: {current_time})")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Timestamp in the future"
             )
     except ValueError as e:
         logger.error(f"Invalid timestamp: {e}")
@@ -111,15 +128,21 @@ async def post_call_webhook(request: Request, background_tasks: BackgroundTasks)
         )
     
     # 5. Validate signature (HMAC SHA256 of timestamp.payload)
+    # Following ElevenLabs documentation: https://elevenlabs.io/docs/agents-platform/workflows/post-call-webhooks#authentication
     try:
         full_payload_to_sign = f"{timestamp}.{payload.decode('utf-8')}"
         mac = hmac.new(
-            key=settings.elevenlabs_webhook_secret.encode("utf-8"),
+            key=settings.elevenlabs_post_call_hmac_key.encode("utf-8"),
             msg=full_payload_to_sign.encode("utf-8"),
             digestmod=sha256,
         )
         digest = 'v0=' + mac.hexdigest()
+        # Use constant-time comparison to prevent timing attacks (more secure than !=)
         if not hmac.compare_digest(hmac_signature, digest):
+            logger.warning(
+                f"HMAC signature mismatch. Expected prefix: {digest[:20]}..., "
+                f"Received prefix: {hmac_signature[:20]}..."
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid signature"
@@ -161,16 +184,33 @@ async def post_call_webhook(request: Request, background_tasks: BackgroundTasks)
         
         # Extract agent_id from payload
         agent_id = payload_json.get("data", {}).get("agent_id")
+        conversation_id = payload_json.get("data", {}).get("conversation_id")
+        
+        # Check OpenMemory configuration before attempting to store
+        if not settings.openmemory_url or not settings.openmemory_api_key:
+            logger.error("OpenMemory not configured: missing OPENMEMORY_URL or OPENMEMORY_API_KEY")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="OpenMemory not configured"
+            )
         
         # Store entire payload to OpenMemory
         openmemory = OpenMemoryClient()
         try:
+            logger.info(f"Attempting to store post-call webhook to OpenMemory for user {user_id}, conversation {conversation_id}")
+            
             # Store post-call payload
             result = await openmemory.store_post_call_payload(
                 payload=payload_json,
                 user_id=user_id
             )
-            logger.info(f"Stored post-call webhook for user {user_id}, memory_id: {result.get('id')}")
+            
+            memory_id = result.get('id')
+            if not memory_id:
+                logger.error(f"OpenMemory returned result without memory ID: {result}")
+                raise ValueError("OpenMemory storage returned no memory ID")
+            
+            logger.info(f"Successfully stored post-call webhook to OpenMemory: user={user_id}, conversation={conversation_id}, memory_id={memory_id}")
             
             # Store agent profile in background if agent_id is present
             if agent_id:
@@ -183,18 +223,35 @@ async def post_call_webhook(request: Request, background_tasks: BackgroundTasks)
                 )
                 logger.debug(f"Scheduled background task to store agent profile for {agent_id}")
             
-            await openmemory.close()
+            # Close OpenMemory client before returning
+            try:
+                await openmemory.close()
+            except Exception as e:
+                logger.warning(f"Error closing OpenMemory client: {e}", exc_info=True)
             
             return {
                 "status": "received",
-                "memory_id": result.get("id")
+                "memory_id": memory_id
             }
-        except Exception as e:
-            logger.error(f"Error storing post-call webhook: {e}", exc_info=True)
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error storing post-call webhook to OpenMemory: {e}", exc_info=True)
+            error_detail = f"OpenMemory HTTP error: {str(e)}"
+            try:
+                if hasattr(e, 'response') and e.response is not None:
+                    error_detail += f" (Status: {e.response.status_code}, Response: {e.response.text[:200]})"
+            except:
+                pass
             await openmemory.close()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to store memory"
+                detail=error_detail
+            )
+        except Exception as e:
+            logger.error(f"Error storing post-call webhook to OpenMemory: {type(e).__name__}: {e}", exc_info=True)
+            await openmemory.close()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to store memory: {str(e)}"
             )
     else:
         # For audio and failure webhooks, just acknowledge receipt
