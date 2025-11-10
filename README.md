@@ -101,9 +101,22 @@ OPENMEMORY_API_KEY=your_openmemory_api_key_here
 # Eleven Labs Configuration
 ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
 ELEVENLABS_POST_CALL_HMAC_KEY=your_post_call_hmac_key_here
+ELEVENLABS_CLIENT_DATA_WORKSPACE_SECRET=your_client_data_workspace_secret_here
 
-# ngrok Configuration (optional, for local development)
-NGROK_AUTH_TOKEN=your_ngrok_auth_token_here
+# Webhook Storage Configuration
+WEBHOOK_STORAGE_PATH=data/webhooks
+WEBHOOK_QUARANTINE_PATH=data/webhooks/quarantine
+AUDIO_CACHE_TTL=3600
+WEBHOOK_RETENTION_DAYS=30
+MAX_RETRIES=3
+ANOMALY_DETECTION_ENABLED=true
+ANOMALY_FAILURE_THRESHOLD=5
+ANOMALY_WINDOW_SECONDS=300
+ALERT_ON_QUARANTINE_FAILURES=true
+REDIS_URL=
+REDIS_TTL=3600
+FILE_PERMISSIONS_MODE=384
+ENABLE_ENCRYPTION_AT_REST=false
 ```
 
 5. Start the service - no database initialization needed!
@@ -520,13 +533,33 @@ See `requirements.txt` for the complete list of dependencies.
 
 All configuration is done through environment variables (loaded from `.env` file):
 
-| Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
-| `OPENMEMORY_URL` | Yes | OpenMemory server URL | `http://localhost:8080` |
-| `OPENMEMORY_API_KEY` | Yes | OpenMemory API key for authentication | - |
-| `ELEVENLABS_API_KEY` | Yes | Eleven Labs API key | - |
-| `ELEVENLABS_POST_CALL_HMAC_KEY` | Yes | HMAC key for post-call webhook signature validation | - |
-| `NGROK_AUTH_TOKEN` | No | ngrok authentication token (optional) | - |
+### Required Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OPENMEMORY_URL` | OpenMemory server URL | `http://localhost:8080` |
+| `OPENMEMORY_API_KEY` | OpenMemory API key for authentication | - |
+| `ELEVENLABS_API_KEY` | Eleven Labs API key | - |
+| `ELEVENLABS_POST_CALL_HMAC_KEY` | HMAC key for post-call webhook signature validation | - |
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ELEVENLABS_CLIENT_DATA_WORKSPACE_SECRET` | Secret for client-data and search-data webhooks (X-Api-Key header) | - |
+| `WEBHOOK_STORAGE_PATH` | Webhook file storage path | `data/webhooks` |
+| `WEBHOOK_QUARANTINE_PATH` | Quarantine directory path | `data/webhooks/quarantine` |
+| `AUDIO_CACHE_TTL` | Audio cache TTL in seconds | `3600` (1 hour) |
+| `WEBHOOK_RETENTION_DAYS` | File retention period in days | `30` |
+| `MAX_RETRIES` | Maximum API retry attempts | `3` |
+| `ANOMALY_DETECTION_ENABLED` | Enable anomaly detection | `true` |
+| `ANOMALY_FAILURE_THRESHOLD` | Number of validation failures before alerting | `5` |
+| `ANOMALY_WINDOW_SECONDS` | Anomaly detection window in seconds | `300` (5 minutes) |
+| `ALERT_ON_QUARANTINE_FAILURES` | Alert when quarantine save fails | `true` |
+| `REDIS_URL` | Redis connection URL for distributed caching | - |
+| `REDIS_TTL` | Redis cache TTL in seconds | `3600` (1 hour) |
+| `FILE_PERMISSIONS_MODE` | File permissions (octal) | `384` (0o600) |
+| `ENABLE_ENCRYPTION_AT_REST` | Enable encryption at rest | `false` |
 
 ## License
 
