@@ -34,13 +34,13 @@ def extract_caller_name(conversation_data: Dict[str, Any]) -> Optional[str]:
     init_data = conversation_data.get("conversation_initiation_client_data", {})
     dynamic_vars = init_data.get("dynamic_variables", {})
     
-    # Common name fields
+    # Common name fields - prioritize system__caller_name (ElevenLabs system field)
     name_fields = [
+        "system__caller_name",  # First priority - ElevenLabs system field
         "caller_name",
         "name",
         "user_name",
-        "customer_name",
-        "system__caller_name"
+        "customer_name"
     ]
     
     for field in name_fields:

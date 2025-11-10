@@ -208,7 +208,8 @@ The system extracts `user_id` from the payload in the following priority order:
 2. **`user_id`** from `data.conversation_initiation_client_data`
 3. **`user_id`** from `data.metadata`
 4. **`user_id`** from `data.conversation_initiation_client_data.dynamic_variables`
-5. **`caller_id`** from `data.metadata` (phone number as fallback)
+5. **`caller_id`** from `data.metadata` (or `from` field)
+6. **`external_number`** from `data.metadata.phone_call` (ElevenLabs system field)
 
 If none are found, the system uses `conversation_id` as a last resort.
 

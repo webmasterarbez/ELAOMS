@@ -170,16 +170,23 @@ async def test_post_call_storage():
         "event_timestamp": conversation_data.get("metadata", {}).get("start_time_unix_secs")
     }
     
-    # Step 3: Extract user_id
-    user_id = conversation_data.get("metadata", {}).get("user_id")
+    # Step 3: Extract user_id - prioritize system__caller_id (ElevenLabs system field)
+    init_data = conversation_data.get("conversation_initiation_client_data", {})
+    dynamic_vars = init_data.get("dynamic_variables", {})
+    
+    # Priority 1: system__caller_id from dynamic_variables (most consistent for same caller)
+    user_id = dynamic_vars.get("system__caller_id")
     if not user_id:
-        init_data = conversation_data.get("conversation_initiation_client_data", {})
-        user_id = init_data.get("user_id")
+        # Priority 2: user_id from metadata
+        user_id = conversation_data.get("metadata", {}).get("user_id")
         if not user_id:
-            dynamic_vars = init_data.get("dynamic_variables", {})
-            user_id = dynamic_vars.get("user_id") or dynamic_vars.get("caller_id")
+            # Priority 3: user_id from conversation_initiation_client_data
+            user_id = init_data.get("user_id")
             if not user_id:
-                user_id = f"test_user_{conversation_id[:10]}"
+                # Priority 4: user_id or caller_id from dynamic_variables
+                user_id = dynamic_vars.get("user_id") or dynamic_vars.get("caller_id")
+                if not user_id:
+                    user_id = f"test_user_{conversation_id[:10]}"
     
     print(f"\n✓ Using user_id: {user_id}")
     

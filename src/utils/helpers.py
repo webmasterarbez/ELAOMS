@@ -15,6 +15,7 @@ def extract_user_id_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     3. user_id from metadata
     4. user_id from dynamic_variables
     5. caller_id from metadata
+    6. external_number from metadata.phone_call (ElevenLabs system field)
     
     The user_id is normalized to ensure consistent storage:
     - Phone numbers are kept with + prefix for consistency
@@ -62,6 +63,14 @@ def extract_user_id_from_payload(payload: Dict[str, Any]) -> Optional[str]:
     if caller_id:
         user_id = str(caller_id).strip()
         logger.info(f"Using metadata.caller_id: {user_id}")
+        return user_id
+    
+    # Priority 6: external_number from metadata.phone_call (ElevenLabs system field)
+    phone_call = data.get("metadata", {}).get("phone_call", {})
+    external_number = phone_call.get("external_number")
+    if external_number:
+        user_id = str(external_number).strip()
+        logger.info(f"Using metadata.phone_call.external_number: {user_id}")
         return user_id
     
     logger.warning("No user_id found in payload")

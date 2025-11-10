@@ -271,27 +271,28 @@ def cleanup_expired_cache_entries() -> int:
     return len(expired_keys)
 
 
-def process_cached_audio_webhook(conversation_id: str, caller_phone: str) -> Optional[str]:
+def process_cached_audio_webhook(conversation_id: str, caller_phone: Optional[str]) -> Optional[str]:
     """
     Process cached audio webhook when transcription arrives.
     
     Args:
         conversation_id: Conversation ID
-        caller_phone: Caller phone number
+        caller_phone: Caller phone number (can be None, will use conversation_id as fallback)
         
     Returns:
         File path where audio was saved or None if no cached audio
     """
     audio_data = get_cached_audio_webhook(conversation_id)
     if not audio_data:
+        logger.debug(f"No cached audio data found for conversation {conversation_id}. Audio webhook may not have been received, expired from cache (TTL: {settings.audio_cache_ttl}s), or failed to cache.")
         return None
     
-    # Save audio file
+    # Save audio file (save_webhook_to_file handles None caller_phone by using conversation_id)
     file_path = save_webhook_to_file(
         payload=None,  # Not needed for audio
         webhook_type="audio",
         conversation_id=conversation_id,
-        caller_phone=caller_phone,
+        caller_phone=caller_phone,  # Can be None
         audio_data=audio_data,
         validated=True  # Already validated since transcription arrived
     )
@@ -573,11 +574,13 @@ def save_webhook_payload(
             use_quarantine=use_quarantine
         )
         
-        # Process cached audio webhook if exists
-        if caller_phone and validated:
+        # Process cached audio webhook if exists (process even if caller_phone is None)
+        if validated:
             audio_path = process_cached_audio_webhook(conversation_id, caller_phone)
             if audio_path:
                 logger.info(f"Processed cached audio webhook: {audio_path}")
+            else:
+                logger.warning(f"No cached audio webhook found for conversation {conversation_id}. Audio webhook may not have been received, expired from cache, or failed to cache.")
         
         # Move from quarantine if validated
         if validated and use_quarantine:
@@ -596,10 +599,56 @@ def save_webhook_payload(
         
         try:
             audio_data = base64.b64decode(full_audio)
-            # Cache audio webhook until transcription arrives
-            cache_audio_webhook(conversation_id, audio_data)
-            logger.info(f"Cached audio webhook for conversation {conversation_id}, waiting for transcription")
-            return None
+            
+            # Check if transcription already exists (audio webhook arrived after transcription)
+            transcription_file = None
+            # Try to find transcription file in webhook storage
+            base_path = settings.webhook_storage_path
+            # Search in all subdirectories for transcription file
+            for root, dirs, files in os.walk(base_path):
+                for file in files:
+                    if file.startswith(f"{conversation_id}_transcription.json"):
+                        transcription_file = os.path.join(root, file)
+                        break
+                if transcription_file:
+                    break
+            
+            if transcription_file and os.path.exists(transcription_file):
+                # Transcription already exists, process audio immediately
+                logger.info(f"Transcription file already exists for conversation {conversation_id}, processing audio immediately")
+                
+                # Load transcription to extract caller phone
+                try:
+                    with open(transcription_file, 'r') as f:
+                        transcription_payload = json.load(f)
+                    caller_phone = extract_caller_phone_from_payload(transcription_payload)
+                    if caller_phone:
+                        caller_phone = sanitize_filename(caller_phone)
+                        logger.info(f"Extracted caller phone from transcription: {caller_phone}")
+                    else:
+                        logger.warning(f"Could not extract caller phone from transcription file for conversation {conversation_id}")
+                except Exception as e:
+                    logger.error(f"Error loading transcription file to extract caller phone: {e}", exc_info=True)
+                    caller_phone = None
+                
+                # Save audio file immediately
+                audio_path = save_webhook_to_file(
+                    payload=None,
+                    webhook_type="audio",
+                    conversation_id=conversation_id,
+                    caller_phone=caller_phone,
+                    audio_data=audio_data,
+                    validated=validated,
+                    request_id=request_id,
+                    use_quarantine=use_quarantine
+                )
+                logger.info(f"Saved audio file immediately (transcription already exists): {audio_path}")
+                return audio_path
+            else:
+                # Cache audio webhook until transcription arrives
+                cache_audio_webhook(conversation_id, audio_data)
+                logger.info(f"Cached audio webhook for conversation {conversation_id}, waiting for transcription")
+                return None
         except Exception as e:
             logger.error(f"Error decoding audio webhook: {e}")
             return None
